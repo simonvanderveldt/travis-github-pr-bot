@@ -43,11 +43,10 @@ if __name__ == '__main__':
     results = sys.stdin.read().strip()
     comment = (
         """
-PEP8 results!
 ```
-{flake_results}
+{results}
 ```
-        """).format(flake_results=results)
+        """).format(results=results)
 
     if all([PR_NUMBER, REPO_SLUG, TOKEN]):
         if PR_NUMBER == "false":
