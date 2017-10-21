@@ -12,4 +12,7 @@ setup(
     keywords=['travis', 'bot', 'github'],
     classifiers=[],
     scripts=['travis_bot/travis_bot.py'],
+    install_requires=[
+        'requests'
+    ]
 )
