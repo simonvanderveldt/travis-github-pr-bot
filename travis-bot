@@ -25,38 +25,42 @@ import requests
 GITHUB_API_URL = 'https://api.github.com'
 
 
-def comment_on_pull_request(pr_number, slug, token, comment):
+def comment_on_pull_request(repo_slug, pr_number, token, comment):
     """ Comment message on a given GitHub pull request. """
-    url = '{api_url}/repos/{slug}/issues/{number}/comments'.format(
-        api_url=GITHUB_API_URL, slug=slug, number=pr_number)
+    url = '{api_url}/repos/{repo_slug}/issues/{number}/comments'.format(
+        api_url=GITHUB_API_URL, repo_slug=repo_slug, number=pr_number)
     response = requests.post(url, data=json.dumps({'body': comment}),
                              headers={'Authorization': 'token ' + token})
     return response.json()
 
 
 if __name__ == '__main__':
-    PR_NUMBER = os.environ.get('TRAVIS_PULL_REQUEST')
     REPO_SLUG = os.environ.get('TRAVIS_REPO_SLUG')
+    PR_NUMBER = os.environ.get('TRAVIS_PULL_REQUEST')
     TOKEN = os.environ.get('TRAVIS_BOT_GITHUB_TOKEN')
-    MESSAGE = os.environ.get('TRAVIS_BOT_NO_RESULTS_MSG', None)
+    NO_RESULT_MESSAGE = os.environ.get('TRAVIS_BOT_NO_RESULTS_MSG', None)
+
+    if not REPO_SLUG:
+        print("TRAVIS_REPO_SLUG environment variable missing, are you running travis-bot on Travis CI?")
+        sys.exit(1)
+
+    if PR_NUMBER == "false":
+        print("This build is not for a pull request, skipping creation of comment")
+        sys.exit(0)
+
+    if not TOKEN:
+        print("Please set TRAVIS_BOT_GITHUB_TOKEN environment variable")
+        sys.exit(1)
 
     results = sys.stdin.read().strip()
-    comment = (
+    message = (
         """
 ```
 {results}
 ```
         """).format(results=results)
 
-    if all([PR_NUMBER, REPO_SLUG, TOKEN]):
-        if PR_NUMBER == "false":
-            print("TRAVIS_PULL_REQUEST is set to 'false'. " +
-                  "Make sure you run travis_bot.py on a pull request build.")
-            sys.exit(0)
-
-        if results:
-            comment_on_pull_request(PR_NUMBER, REPO_SLUG, TOKEN, comment)
-        elif MESSAGE:
-            comment_on_pull_request(PR_NUMBER, REPO_SLUG, TOKEN, MESSAGE)
-    else:
-        print('Not all necessary variables are present')
+    if results:
+        comment_on_pull_request(REPO_SLUG, PR_NUMBER, TOKEN, message)
+    elif NO_RESULT_MESSAGE:
+        comment_on_pull_request(REPO_SLUG, PR_NUMBER, TOKEN, NO_RESULT_MESSAGE)
