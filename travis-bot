@@ -1,21 +1,28 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
-Comments stdin to the GitHub PR that triggered the travis build.
+Posts a comment with the contents from stdin on the GitHub PR that triggered the build
 
 Usage:
-    flake8 | python travis_bot.py
+    flake8 | travis-bot
 
 Notes:
-    The following enviromental variables need to be set:
-    - TRAVIS_PULL_REQUEST
+    The following enviroment variables need to be set:
+    - GITHUB_TOKEN
+
+    For Travis:
+    - TRAVIS
     - TRAVIS_REPO_SLUG
-    - TRAVIS_BOT_GITHUB_TOKEN
+    - TRAVIS_PULL_REQUEST
+    - TRAVIS_SECURE_ENV_VARS=true
 
-    Moreover, TRAVIS_PULL_REQUEST needs to be set to the pull request's number
-    and not 'false', which happens when a build is not a PR build.
+    For CircleCI:
+    - CIRCLECI
+    - CIRCLE_PROJECT_USERNAME
+    - CIRCLE_PROJECT_REPONAME
+    - CIRCLE_PULL_REQUEST
+
+    - CIRCLE_PR_NUMBER needs to be unset
 """
-
-from __future__ import print_function
 
 import argparse
 import json
@@ -29,6 +36,7 @@ GITHUB_API_URL = 'https://api.github.com'
 
 def comment_on_pull_request(repo_slug, pr_number, token, comment):
     """ Comment message on a given GitHub pull request. """
+    print(f"Posting comment on pull request {repo_slug}#{pr_number}")
     url = '{api_url}/repos/{repo_slug}/issues/{number}/comments'.format(
         api_url=GITHUB_API_URL, repo_slug=repo_slug, number=pr_number)
     response = requests.post(url, data=json.dumps({'body': comment}),
@@ -36,29 +44,57 @@ def comment_on_pull_request(repo_slug, pr_number, token, comment):
     return response.json()
 
 
+def get_config_travis():
+    repo_slug = os.environ['TRAVIS_REPO_SLUG']
+    pr_number = os.environ['TRAVIS_PULL_REQUEST']
+    is_pr = not pr_number == "false"
+    is_forked_pr = os.environ['TRAVIS_SECURE_ENV_VARS'] == "false"
+
+    return repo_slug, pr_number, is_pr, is_forked_pr
+
+
+def get_config_circleci():
+    repo_slug = "/".join((os.environ['CIRCLE_PROJECT_USERNAME'],
+                          os.environ['CIRCLE_PROJECT_REPONAME']))
+    pr_url = os.environ.get('CIRCLE_PULL_REQUEST')
+    pr_number = pr_url.split("/")[-1] if pr_url else None
+    is_pr = bool(pr_number)
+    is_forked_pr = 'CIRCLE_PR_NUMBER' in os.environ
+
+    return repo_slug, pr_number, is_pr, is_forked_pr
+
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Comment on GitHub PRs from Travis')
+    parser = argparse.ArgumentParser(description='Post comments on GitHub PRs from CI')
     parser.add_argument('--description', type=str, default="",
                         help="Text describing the comment message's contents")
 
     args = parser.parse_args()
 
-    REPO_SLUG = os.environ.get('TRAVIS_REPO_SLUG')
-    PR_NUMBER = os.environ.get('TRAVIS_PULL_REQUEST')
-    TOKEN = os.environ.get('TRAVIS_BOT_GITHUB_TOKEN')
-    NO_RESULT_MESSAGE = os.environ.get('TRAVIS_BOT_NO_RESULTS_MSG', None)
-
-    if not REPO_SLUG:
-        print("TRAVIS_REPO_SLUG environment variable missing, are you running travis-bot on Travis CI?")
-        sys.exit(1)
-
-    if PR_NUMBER == "false":
-        print("This build is not for a pull request, skipping creation of comment")
-        sys.exit(0)
-
+    TOKEN = os.environ.get('GITHUB_TOKEN')
     if not TOKEN:
-        print("Please set TRAVIS_BOT_GITHUB_TOKEN environment variable")
+        print("Please set the GITHUB_TOKEN environment variable")
         sys.exit(1)
+
+    if "TRAVIS" in os.environ:
+        REPO_SLUG, PR_NUMBER, IS_PR, IS_FORKED_PR = get_config_travis()
+    elif "CIRCLECI" in os.environ:
+        REPO_SLUG, PR_NUMBER, IS_PR, IS_FORKED_PR = get_config_circleci()
+    else:
+        print("This script only works on Travis or CircleCI, exiting")
+        sys.exit(1)
+
+    if not IS_PR:
+        print("Skipping posting comment to GitHub because this build isn't for a pull request")
+        sys.exit()
+
+    if IS_FORKED_PR:
+        print("Skipping posting comment to GitHub because this build is "
+              "for a pull request from a fork")
+        print("Forks don't have access to CI secrets so can't post comments to GitHub")
+        sys.exit()
+
+    NO_RESULT_MESSAGE = os.environ.get('TRAVIS_BOT_NO_RESULTS_MSG', None)
 
     results = sys.stdin.read().strip()
     message = (
